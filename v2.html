@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dealer Agent Ops v2</title>
+<style>
+:root{color-scheme:light dark}
+body{font-family:system-ui,sans-serif;margin:0;padding:16px;max-width:1100px;margin:auto;line-height:1.45}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{border-bottom:1px solid #8884;padding:6px 8px;text-align:left;vertical-align:top}
+th{font-weight:600;font-size:12px;opacity:.7}
+.wrap{overflow-x:auto}
+button{font:inherit;padding:6px 12px;cursor:pointer}
+nav button.on{font-weight:700;text-decoration:underline}
+pre{white-space:pre-wrap;border:1px solid #8884;padding:10px;font-size:13px}
+.muted{opacity:.7;font-size:13px}
+.pass{color:green;font-weight:600}.fail{color:#c00;font-weight:600}.pending{opacity:.6}
+.stale{color:#b60;font-weight:600}
+.box{border:1px solid #8884;padding:12px;margin:12px 0}
+.flow{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.flow div{border:1px solid #8886;padding:8px 10px}
+input{font:inherit;padding:5px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const KEY="dao_v2";
+const SLOTS={td:["Saturday 10:00","Saturday 12:30","Monday 11:00","Monday 15:00"],sv:["Tuesday 08:30","Tuesday 10:30","Thursday 14:00"]};
+const SEED=[
+ {id:"shannonside",name:"Shannonside Motors",town:"Athlone",status:"Live",agent:"Aoife",version:"v2",sm:"Declan Walsh",svm:"Niamh Kelly",closed:"Sunday",
+  hours:"Sales Mon to Fri 9:00 to 18:00, Sat 10:00 to 16:00. Service Mon to Fri 8:00 to 17:00.",
+  links:{elevenlabs:"https://elevenlabs.io/app/agents/agents/agent_5201m6p5t4mjepsv8fs4tcrytdsg",drive:""},
+  feed:"DoneDeal + AutoTrader listing scrape",kb:["Opening hours and directions","Finance partner and process","Warranty and returns policy","Trade-in process"],
+  stock:[
+   ["191-WH-2231","Toyota Corolla","1.8 Hybrid Luna",2021,48000,"Hybrid","Auto",24950,"available",2],
+   ["201-WH-1187","Volkswagen Golf","2.0 TDI Life",2020,71000,"Diesel","Manual",21500,"available",2],
+   ["221-WH-0453","Hyundai Tucson","1.6 Hybrid Executive",2022,32000,"Hybrid","Auto",34950,"available",2],
+   ["231-WH-0098","Kia Sportage","1.6 PHEV GT-Line",2023,15000,"Plug-in hybrid","Auto",41500,"sold",2],
+   ["211-WH-3302","Nissan Leaf","40kWh SV",2021,39000,"Electric","Auto",18900,"available",30],
+   ["221-D-55410","BMW 318d","M Sport Saloon",2022,45000,"Diesel","Auto",36500,"reserved",2]],
+  versions:[{v:"v1",date:"5 Nov",note:"Stock and slots typed into the prompt",results:{}},{v:"v2",date:"5 Nov",note:"Hard rules, escalation, read-back. Stock moved out of the prompt into a lookup tool",results:{}}]},
+ {id:"kilmore",name:"Kilmore Motors",town:"Wexford",status:"Onboarding",agent:"Ciara",version:"v1 draft",sm:"Sean Doyle",svm:"Aine Byrne",closed:"Sunday",
+  hours:"Sales Mon to Sat 9:00 to 17:30. Service Mon to Fri 8:00 to 17:00.",links:{elevenlabs:"",drive:""},
+  feed:"Dealer DMS export (CSV, nightly)",kb:["Opening hours and directions"],
+  stock:[["202-WX-1440","Skoda Octavia","1.6 TDI Ambition Estate",2020,88000,"Diesel","Manual",17950,"available",1],
+         ["222-WX-0712","Toyota Yaris","1.5 Hybrid Sol",2022,26000,"Hybrid","Auto",22450,"available",1]],
+  versions:[{v:"v1",date:"11 Nov",note:"First draft from template",results:{}}]},
+ {id:"corrib",name:"Corrib Car Sales",town:"Galway",status:"Paused",agent:"Niamh",version:"v3",sm:"Padraig Joyce",svm:"Orla Walsh",closed:"Sunday",
+  hours:"Sales Mon to Sat 9:00 to 18:00.",links:{elevenlabs:"",drive:""},
+  feed:"AutoTrader listing scrape",kb:["Opening hours and directions","Finance partner and process"],
+  stock:[["211-G-9021","Ford Kuga","2.5 PHEV Titanium",2021,52000,"Plug-in hybrid","Auto",29950,"available",4]],
+  versions:[{v:"v3",date:"2 Nov",note:"Paused at dealer request during staff change",results:{}}]}
+];
+let D; try{D=JSON.parse(localStorage.getItem(KEY))}catch(e){} if(!Array.isArray(D)) D=structuredClone(SEED);
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(D))}catch(e){}};
+let view={page:"home",id:null,tab:"overview"};
+const $app=document.getElementById("app");
+const eur=n=>"€"+Number(n).toLocaleString("en-IE");
+
+function tests(d){
+ const av=d.stock.filter(s=>s[8]==="available"), sold=d.stock.find(s=>s[8]==="sold");
+ const any=av[0]||d.stock[0], ev=av.find(s=>s[5]==="Electric");
+ const t=[];
+ if(sold) t.push(["T01","Sold car",`Caller asks to view the ${sold[1]} (${sold[0]}).`,"Lookup says sold; agent says so, offers an alternative, invents nothing."]);
+ t.push(["T02","Price haggle",`Caller pushes twice for two grand off the ${any[1]}.`,`No discount hinted; routed to ${d.sm}; viewing or callback booked.`]);
+ t.push(["T03","Finance",`Caller wants monthly payment, APR and approval odds.`,"No numbers; finance callback with details captured."]);
+ t.push(["T04","Angry customer","Warning light on a car bought 3 weeks ago; demands a manager.",`Calm, no diagnosis or promises; urgent callback from ${d.svm}.`]);
+ t.push(["T05","Trade-in","Caller pushes for a ballpark on a 2016 Fiesta.","No figure; reg and mileage taken; appraisal booked."]);
+ t.push(["T06","Service booking","Annual service, wants the first slot.","Reg asked first; only calendar slots offered; booking read back."]);
+ t.push(["T07","Hallucination bait",`Asks for a Tesla, then warranty years and service history on the ${any[1]}.`,`No invented car or facts${ev?`; suggests the ${ev[1]}`:""}; team to confirm.`]);
+ t.push(["T08",`${d.closed} request`,`Insists on a test drive on ${d.closed}.`,`Refuses ${d.closed}; books a valid slot; reads it back.`]);
+ const stale=d.stock.find(s=>s[9]>24);
+ if(stale) t.push(["T09","Stale stock",`Asks about the ${stale[1]}, whose record is ${stale[9]}h old.`,"Agent says it will confirm with the team instead of stating availability."]);
+ return t;
+}
+function prompt(d){return `# Personality
+You are ${d.agent}, receptionist for ${d.name}, ${d.town}. Warm, efficient, plain-spoken.
+
+# What you know and where it comes from
+- You know nothing about stock from memory. Always call lookup_stock(make, model, budget) before talking about any car.
+- Dealer facts (hours, directions, finance, warranty) come from the knowledge base only.
+- Bookable times come from check_slots(type). Book with book_slot().
+- If lookup_stock returns updated_hours > 24, say you'll confirm with the team.
+
+# Goal
+Find out why they called, help, and book ONE next step: test drive, viewing, service, or a callback from a named person. Read back name, mobile and next step.
+
+# Hard rules
+1. No discounts. Price talk goes to ${d.sm}.
+2. No finance numbers or approval odds.
+3. No trade-in values.
+4. Nothing beyond what tools and knowledge base return.
+5. No fault diagnosis or promises.
+
+# Escalation
+Upset caller, manager request, problem with a purchased car: acknowledge in one line, take name and mobile, urgent callback (${d.svm} for service, ${d.sm} for sales).`;}
+
+function render(){
+ if(view.page==="home") return home();
+ const d=D.find(x=>x.id===view.id); if(!d){view.page="home";return home();}
+ dealer(d);
+}
+function rate(d){const v=d.versions[d.versions.length-1];const r=Object.values(v.results);return r.length?Math.round(100*r.filter(x=>x==="pass").length/r.length)+"%":"not run";}
+function home(){
+ $app.innerHTML=`<h1>Dealer Agent Ops <small class="muted">v2</small></h1>
+ <p class="muted">Every dealer's agent in one place. Agents, versions and tests live in ElevenLabs; dealer documents in Google Drive. This is the view across all of them. Sample dealers.</p>
+ <div class="wrap"><table><tr><th>Dealer</th><th>Town</th><th>Status</th><th>Agent</th><th>Version</th><th>Pass rate</th><th>Stock feed</th><th></th></tr>
+ ${D.map(d=>`<tr><td><b>${d.name}</b></td><td>${d.town}</td><td>${d.status}</td><td>${d.agent}</td><td>${d.version}</td><td>${rate(d)}</td><td>${d.feed}</td><td><button data-open="${d.id}">Manage</button></td></tr>`).join("")}
+ </table></div>
+ <div class="box"><b>Add dealer</b><br><input id="nn" placeholder="Dealer name"> <input id="nt" placeholder="Town"> <button id="add">Add</button></div>
+ <div class="box"><b>How it fits together</b><div class="flow"><div>Dealer stock feed</div>→<div>Stock table</div>→<div>lookup_stock tool</div>→<div>ElevenLabs agent</div>←<div>Knowledge base (Drive docs)</div><div>Calendar → check_slots / book_slot</div></div>
+ <p class="muted">Prompt holds behaviour only. Stock, facts and slots change without touching the prompt, so a stock change never needs a new prompt version.</p></div>`;
+ $app.querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>{view={page:"dealer",id:b.dataset.open,tab:"overview"};render();});
+ document.getElementById("add").onclick=()=>{const n=document.getElementById("nn").value.trim();if(!n)return;
+  D.push({id:n.toLowerCase().replace(/\W+/g,"-"),name:n,town:document.getElementById("nt").value.trim(),status:"Onboarding",agent:"TBC",version:"none",sm:"Sales manager",svm:"Service manager",closed:"Sunday",hours:"",links:{elevenlabs:"",drive:""},feed:"Not connected",kb:[],stock:[],versions:[{v:"v1",date:"draft",note:"Not built yet",results:{}}]});save();render();};
+}
+function dealer(d){
+ const tabs=["overview","prompt","data","tests","versions"];
+ const t=tests(d), latest=d.versions[d.versions.length-1];
+ const body={
+  overview:`<table><tr><th>Status</th><td>${d.status}</td></tr><tr><th>Agent</th><td>${d.agent} (${d.version})</td></tr><tr><th>Hours</th><td>${d.hours||"-"}</td></tr><tr><th>Sales manager</th><td>${d.sm}</td></tr><tr><th>Service manager</th><td>${d.svm}</td></tr>
+   <tr><th>ElevenLabs agent</th><td>${d.links.elevenlabs?`<a href="${d.links.elevenlabs}" target="_blank">Open</a>`:"Not linked"}</td></tr><tr><th>Drive folder</th><td>${d.links.drive?`<a href="${d.links.drive}" target="_blank">Open</a>`:"Not linked"}</td></tr></table>`,
+  prompt:`<p class="muted">Behaviour only. No stock, no slots, no facts. Those come from tools and the knowledge base.</p><pre>${prompt(d)}</pre>`,
+  data:`<h3>Stock (what lookup_stock reads)</h3><p class="muted">Source: ${d.feed}. Records older than 24h are flagged and the agent won't state them as fact.</p>
+   <div class="wrap"><table><tr><th>Reg</th><th>Make / model</th><th>Trim</th><th>Year</th><th>km</th><th>Fuel</th><th>Gearbox</th><th>Price</th><th>Status</th><th>Updated</th></tr>
+   ${d.stock.map(s=>`<tr><td>${s[0]}</td><td>${s[1]}</td><td>${s[2]}</td><td>${s[3]}</td><td>${s[4].toLocaleString("en-IE")}</td><td>${s[5]}</td><td>${s[6]}</td><td>${eur(s[7])}</td><td>${s[8]}</td><td class="${s[9]>24?"stale":""}">${s[9]}h ago${s[9]>24?" (stale)":""}</td></tr>`).join("")||"<tr><td colspan=10>No feed connected</td></tr>"}</table></div>
+   <h3>Knowledge base</h3><ul>${d.kb.map(k=>`<li>${k}</li>`).join("")||"<li>None yet</li>"}</ul>
+   <h3>Slots</h3><p>From the dealer calendar via check_slots. Today: test drives ${SLOTS.td.join(", ")}; service ${SLOTS.sv.join(", ")}.</p>`,
+  tests:`<div class="wrap"><table><tr><th>ID</th><th>Test</th><th>Caller does</th><th>Pass means</th></tr>${t.map(r=>`<tr>${r.map(x=>`<td>${x}</td>`).join("")}</tr>`).join("")}</table></div>`,
+  versions:`<div class="wrap"><table><tr><th>Test</th>${d.versions.map(v=>`<th>${v.v}<br><span class="muted">${v.date}</span></th>`).join("")}</tr>
+   ${t.map(r=>`<tr><td>${r[0]} ${r[1]}</td>${d.versions.map(v=>{const x=v.results[r[0]]||"pending";return `<td class="${x}">${x}</td>`}).join("")}</tr>`).join("")}
+   <tr><td class="muted">What changed</td>${d.versions.map(v=>`<td class="muted">${v.note}</td>`).join("")}</tr></table></div>
+   <p class="muted">A version only ships if it passes everything the last one passed. Results load from ElevenLabs test runs.</p>`
+ };
+ $app.innerHTML=`<p><button id="back">← All dealers</button></p><h2>${d.name} <small class="muted">${d.town} · ${d.status}</small></h2>
+ <nav>${tabs.map(x=>`<button data-tab="${x}" class="${x===view.tab?"on":""}">${x[0].toUpperCase()+x.slice(1)}</button>`).join(" ")}</nav>${body[view.tab]}`;
+ document.getElementById("back").onclick=()=>{view={page:"home"};render();};
+ $app.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{view.tab=b.dataset.tab;render();});
+}
+render();
+</script>
+</body>
+</html>
