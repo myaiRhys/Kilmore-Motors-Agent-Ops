@@ -7,9 +7,9 @@ Console for running dealer voice agents across many dealers. Static HTML, no bui
 
 ## Versions
 
-Each version is a git tag. `git checkout v1.0` (or v2.0, v2.1) to see it as it was.
+Each version is saved as its own branch: `version/v1.0`, `version/v2.0`, `version/v2.1`. Switch to one on GitHub to see it as it was.
 
-| Tag | What changed | Why |
+| Version | What changed | Why |
 |---|---|---|
 | v1.0 | One dealer. Stock, slots and facts typed into the prompt. Generated prompt and 8 tests. | Get a working agent and test suite fast. |
 | v2.0 | Multi-dealer list. Prompt holds behaviour only; stock, facts and slots come from tools and the knowledge base. Stale-stock test added. | Stock in the prompt meant every stock change needed a new prompt version, and sold cars still got offered. |
